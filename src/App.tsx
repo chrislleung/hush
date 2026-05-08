@@ -7,15 +7,35 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./App.css";
 
-const groq = new Groq({
-  apiKey: import.meta.env.VITE_GROQ_API_KEY,
-  dangerouslyAllowBrowser: true,
-});
+//from hardcoded API key 
+// const groq = new Groq({
+//   apiKey: import.meta.env.VITE_GROQ_API_KEY,
+//   dangerouslyAllowBrowser: true,
+// });
 
 interface Message { role: "user" | "assistant" | "system"; content: string; }
+interface ChatTab { id: string; title: string; messages: Message[]; }
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // --- CHAT & TAB STATE ---
+  const [tabs, setTabs] = useState<ChatTab[]>(() => {
+    const saved = localStorage.getItem("chatTabs");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed.length > 0) return parsed;
+    }
+    return [{ id: "tab-1", title: "Session 1", messages: [] }];
+  });
+  
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const savedId = localStorage.getItem("activeTabId");
+    const savedTabs = localStorage.getItem("chatTabs");
+    const parsedTabs = savedTabs ? JSON.parse(savedTabs) : [];
+    return savedId && parsedTabs.some((t: ChatTab) => t.id === savedId) ? savedId : "tab-1";
+  });
+
+  const activeMessages = tabs.find(t => t.id === activeTabId)?.messages || [];
+
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListeningMic, setIsListeningMic] = useState(false);
@@ -26,6 +46,9 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState(() => localStorage.getItem("selectedModel") || "llama-3.3-70b-versatile");
   const [bgOpacity, setBgOpacity] = useState(() => parseFloat(localStorage.getItem("bgOpacity") || "0.85"));
   const [answerStyle, setAnswerStyle] = useState(() => localStorage.getItem("answerStyle") || "default");
+
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("apiKey") || "");
+  const apiKeyRef = useRef(apiKey);
 
   // Daily Token Tracker
   const [dailyTokens, setDailyTokens] = useState<Record<string, number>>(() => {
@@ -56,22 +79,57 @@ export default function App() {
   //Memory Banks for background functions to access live data
   const autoSendRef = useRef(autoSend);
   const inputRef = useRef(input);
-  const messagesRef = useRef(messages);
+  const messagesRef = useRef(activeMessages);
   const selectedModelRef = useRef(selectedModel);
   const answerStyleRef = useRef(answerStyle);
+
+  const MODEL_LIMITS: Record<string, string> = {
+    "allam-2-7b": "500K",
+    "groq/compound": "No limit",
+    "groq/compound-mini": "No limit",
+    "llama-3.1-8b-instant": "500K",
+    "llama-3.3-70b-versatile": "100K",
+    "meta-llama/llama-4-scout-17b-16e-instruct": "500K",
+    "meta-llama/llama-prompt-guard-2-22m": "500K",
+    "meta-llama/llama-prompt-guard-2-86m": "500K",
+    "openai/gpt-oss-120b": "200K",
+    "openai/gpt-oss-20b": "200K",
+    "openai/gpt-oss-safeguard-20b": "200K",
+    "qwen/qwen3-32b": "500K",
+  };
+
+  
+
+  // Sync API Key to localStorage and update the ref
+  useEffect(() => { 
+    localStorage.setItem("apiKey", apiKey);
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
 
   useEffect(() => { 
     localStorage.setItem("autoSend", autoSend.toString());
     autoSendRef.current = autoSend; 
   }, [autoSend]);
   useEffect(() => { inputRef.current = input; }, [input]);
-  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  const activeTabIdRef = useRef(activeTabId);
+
+  useEffect(() => { 
+    localStorage.setItem("chatTabs", JSON.stringify(tabs));
+  }, [tabs]);
+  
+  useEffect(() => { 
+    localStorage.setItem("activeTabId", activeTabId);
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  // Point the background memory bank to whatever tab is currently open
+  useEffect(() => { messagesRef.current = activeMessages; }, [activeMessages]);
+
   useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
   useEffect(() => { answerStyleRef.current = answerStyle; }, [answerStyle]);
   
   // --- INITIALIZATION & SYNC ---
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isLoading]);
-
+useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeMessages, isLoading]);
   useEffect(() => {
     localStorage.setItem("bgOpacity", bgOpacity.toString());
     localStorage.setItem("selectedModel", selectedModel);
@@ -97,6 +155,45 @@ export default function App() {
       localStorage.setItem("lastTokenDate", lastTokenDate);
     }
   }, [dailyTokens, lastTokenDate]);
+
+  // --- TAB CONTROLS ---
+  const [editingTabId, setEditingTabId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const createNewTab = () => {
+    const newTab: ChatTab = { id: Date.now().toString(), title: `Session ${tabs.length + 1}`, messages: [] };
+    setTabs(prev => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+  };
+
+  const deleteTab = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent the click from selecting the tab
+    if (tabs.length === 1) return; // Don't delete the last tab
+    
+    setTabs(prev => {
+      const newTabs = prev.filter(t => t.id !== id);
+      if (activeTabId === id) setActiveTabId(newTabs[newTabs.length - 1].id);
+      return newTabs;
+    });
+  };
+
+  // Renaming Functions
+  const startRenaming = (tab: ChatTab, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTabId(tab.id);
+    setEditingTitle(tab.title);
+  };
+
+  const saveTabName = (id: string) => {
+    if (editingTitle.trim()) {
+      setTabs(prev => prev.map(t => t.id === id ? { ...t, title: editingTitle.trim() } : t));
+    }
+    setEditingTabId(null);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === 'Enter') saveTabName(id);
+    if (e.key === 'Escape') setEditingTabId(null);
+  };
 
   // --- NATIVE ACTIONS ---
   const toggleMic = () => {
@@ -182,19 +279,27 @@ export default function App() {
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         const file = new File([audioBlob], "question.webm", { type: 'audio/webm' });
         
+        if (!apiKeyRef.current) {
+          setInput("Error: Please add your Groq API key in Settings.");
+          setShowSettings(true);
+          return;
+        }
+
         if (!autoSendRef.current) setInput("Transcribing question...");
         
         try {
-          const transcription = await groq.audio.transcriptions.create({ file: file, model: "whisper-large-v3" });
+          // NEW: Initialize Groq dynamically here too
+          const userGroq = new Groq({ apiKey: apiKeyRef.current, dangerouslyAllowBrowser: true });
+          const transcription = await userGroq.audio.transcriptions.create({ file: file, model: "whisper-large-v3" });
           
           if (autoSendRef.current) {
-            setInput(""); // Clear text
-            handleSend(transcription.text); // Fire away instantly
+            setInput(""); 
+            handleSend(transcription.text); 
           } else {
             setInput((prev) => prev.replace("Transcribing question...", transcription.text));
           }
         } catch (error) { 
-          if (!autoSendRef.current) setInput((prev) => prev.replace("Transcribing question...", "Error transcribing.")); 
+          if (!autoSendRef.current) setInput((prev) => prev.replace("Transcribing question...", "Error transcribing audio. Check your API key.")); 
         }
       };
 
@@ -221,39 +326,57 @@ export default function App() {
   // --- CHAT LOGIC ---
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isLoading) return;
+    
+    // Check if they provided a key first!
+    if (!apiKeyRef.current) {
+      alert("Please enter your Groq API Key in the settings (⚙️) first!");
+      setShowSettings(true);
+      return;
+    }
+
     const userMessage: Message = { role: "user", content: textToSend };
-    setMessages((prev) => [...prev, userMessage]);
+    setTabs(prev => prev.map(tab => 
+      tab.id === activeTabIdRef.current ? { ...tab, messages: [...tab.messages, userMessage] } : tab
+    ));
     setInput("");
     setIsLoading(true);
 
-    // Pull from refs to ensure background tasks always have the latest settings
     let systemPrompt = "You are a concise, helpful assistant.";
     const style = answerStyleRef.current;
-    
-    if (style === "quick") systemPrompt = "You are an expert. Give extremely brief, direct, and rapid-fire answers. You MUST output your response as a standard Markdown list, placing EVERY bullet point on a NEW LINE using the '-' character. No fluff, no introductory filler, and no concluding paragraphs. Just the raw facts.";
-    else if (style === "detailed") systemPrompt = "You are an expert tutor. Provide comprehensive, highly detailed explanations with step-by-step reasoning and examples.";
-    else if (style === "code") systemPrompt = "You are a senior developer. Provide ONLY functional code in markdown blocks. Do NOT output any conversational text, pleasantries, or explanations outside the code blocks.";
+
+    if (style === "quick") {
+      systemPrompt = "You are an expert software engineer in a technical interview. Give brief, direct answers formatted as a Markdown list — every bullet on its own line using '-'. No filler, no conclusions. For every question, you MUST cover: the approach/strategy, the step-by-step logic, Big-O time and space complexity, and any key trade-offs. Never give a one-line answer — always break down the full reasoning. Never output raw code or code blocks under any circumstances.";    } 
+    else if (style === "detailed") {
+      systemPrompt = "You are an expert senior developer and technical tutor. Give comprehensive, in-depth explanations. Break down complex concepts with step-by-step reasoning, real-world examples, and established best practices. Emphasize the 'why' and 'how' throughout. Code snippets are allowed only when they meaningfully clarify the explanation — keep them minimal.";
+    } 
+    else if (style === "code") {
+      systemPrompt = "You are a senior software engineer in a technical interview. Output the optimal, production-ready solution in a single Markdown code block. Follow it immediately with a rapid-fire Markdown list — every bullet on its own line using '-' — covering the core logic, key implementation decisions, and exact Big-O time and space complexity. No conversational text, pleasantries, or filler of any kind.";
+    }
 
     try {
-      const response = await groq.chat.completions.create({ 
+      // NEW: Initialize Groq dynamically using their saved key
+      const userGroq = new Groq({ apiKey: apiKeyRef.current, dangerouslyAllowBrowser: true });
+      
+      const response = await userGroq.chat.completions.create({ 
         model: selectedModelRef.current, 
         messages: [{ role: "system", content: systemPrompt }, ...messagesRef.current, userMessage] 
       });
       
-      setMessages((prev) => [...prev, { role: "assistant", content: response.choices[0].message.content || "" }]);
-      
-      // Add the tokens used in this request to your daily total for that model
+      setTabs(prev => prev.map(tab => 
+        tab.id === activeTabIdRef.current ? { ...tab, messages: [...tab.messages, { role: "assistant", content: response.choices[0].message.content || "" }] } : tab
+      ));      
       if (response.usage && response.usage.total_tokens) {
         const usedTokens = response.usage.total_tokens;
         const modelUsed = selectedModelRef.current;
-        
-        setDailyTokens(prev => ({
-          ...prev,
-          [modelUsed]: (prev[modelUsed] || 0) + usedTokens
-        }));
+        setDailyTokens(prev => ({ ...prev, [modelUsed]: (prev[modelUsed] || 0) + usedTokens }));
       }
       
-    } catch (error) { console.error(error); } 
+    } catch (error: any) { 
+      console.error(error); 
+      setTabs(prev => prev.map(tab => 
+        tab.id === activeTabIdRef.current ? { ...tab, messages: [...tab.messages, { role: "assistant", content: `**Error:** ${error.message || "Failed to fetch response."}` }] } : tab
+      ));
+    } 
     finally { setIsLoading(false); }
   };
   // --- HOTKEY CAPTURE LOGIC ---
@@ -297,7 +420,7 @@ export default function App() {
   return (
     <div className="overlay-container" style={{ backgroundColor: `rgba(12, 12, 16, ${bgOpacity})` }}>
       <div className="drag-handle" data-tauri-drag-region>
-        <div className="header-title" data-tauri-drag-region>Meeting Copilot</div>
+        <div className="header-title" data-tauri-drag-region>Hush</div>
         <div className="header-controls">
           <button className="control-btn" onClick={() => setShowSettings(!showSettings)}>⚙️</button>
           <button className="control-btn" onClick={() => getCurrentWindow().hide()}>_</button>
@@ -306,28 +429,45 @@ export default function App() {
 
       {showSettings && (
         <div className="settings-panel">
+
+          {/* BYOK Input Field */}
+          <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+            <label>Groq API Key <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{color: '#4CAF50', fontSize: '0.8em', textDecoration: 'none'}}>(Get yours here)</a></label>
+            <input 
+              type="password" 
+              value={apiKey} 
+              onChange={e => setApiKey(e.target.value)} 
+              placeholder="gsk_..." 
+              className="hotkey-input"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+
           <div className="setting-row"><label>Opacity</label><input type="range" className="modern-slider" min="0.1" max="1" step="0.1" value={bgOpacity} onChange={e => setBgOpacity(parseFloat(e.target.value))} /></div>
           {/* Token Display */}
           <div className="setting-row">
             <label>Today's Tokens Used For This Model</label>
             <span style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: '0.9em' }}>
-              {/* Fallback to 0 if the currently selected model hasn't been used yet today */}
-              {(dailyTokens[selectedModel] || 0).toLocaleString()}
+              {(dailyTokens[selectedModel] || 0).toLocaleString()} / {MODEL_LIMITS[selectedModel] || "Unknown"}
             </span>
           </div>
           
           <div className="setting-row">
             <label>AI Model</label>
             <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} className="model-selector-settings">
-              {/* Your existing models */}
               <option value="llama-3.3-70b-versatile">Llama 3.3 (70B)</option>
               <option value="llama-3.1-8b-instant">Llama 3.1 (8B)</option>
-              
-              {/* NEW: Add any model from your Groq limits page here! */}
-              <option value="gemma2-9b-it">Gemma 2 (9B)</option>
-              <option value="mixtral-8x7b-32768">Mixtral (8x7B)</option>
-              <option value="qwen-2.5-32b">Qwen 2.5 (32B)</option>
-              <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 (70B)</option>
+              <option value="allam-2-7b">Allam 2 (7B)</option>
+              <option value="groq/compound">Groq Compound (Slower Unlimited)</option>
+              <option value="groq/compound-mini">Groq Compound Mini (Faster Unlimited)</option>
+              <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout (17B)</option>
+              <option value="meta-llama/llama-prompt-guard-2-22m">Prompt Guard (22M)</option>
+              <option value="meta-llama/llama-prompt-guard-2-86m">Prompt Guard (86M)</option>
+              <option value="openai/gpt-oss-120b">GPT OSS (120B)</option>
+              <option value="openai/gpt-oss-20b">GPT OSS (20B)</option>
+              <option value="openai/gpt-oss-safeguard-20b">GPT OSS Safeguard (20B)</option>
+              <option value="qwen/qwen3-32b">Qwen 3 (32B)</option>
             </select>
           </div>
           
@@ -365,8 +505,40 @@ export default function App() {
         </div>
       )}
 
+      {/* Tab Navigation Bar */}
+      <div className="tabs-container">
+        {tabs.map(tab => (
+          <div 
+            key={tab.id} 
+            className={`tab ${activeTabId === tab.id ? "active" : ""}`} 
+            onClick={() => setActiveTabId(tab.id)}
+            onDoubleClick={(e) => startRenaming(tab, e)}
+            title="Double-click to rename"
+          >
+            {editingTabId === tab.id ? (
+              <input
+                autoFocus
+                value={editingTitle}
+                onChange={e => setEditingTitle(e.target.value)}
+                onBlur={() => saveTabName(tab.id)}
+                onKeyDown={e => handleRenameKeyDown(e, tab.id)}
+                className="tab-rename-input"
+                onClick={e => e.stopPropagation()} 
+              />
+            ) : (
+              <>
+                {tab.title}
+                {tabs.length > 1 && <span className="close-tab" onClick={(e) => deleteTab(tab.id, e)}>×</span>}
+              </>
+            )}
+          </div>
+        ))}
+        <button className="new-tab-btn" onClick={createNewTab}>+</button>
+      </div>
+
       <div className="content">
-        {messages.map((m, i) => (
+        {/* Changed messages.map to activeMessages.map */}
+        {activeMessages.map((m, i) => (
           <div key={i} className={m.role === "assistant" ? "ai-suggestion markdown-body" : "user-message"}>
             {m.role === "assistant" ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : m.content}
           </div>
