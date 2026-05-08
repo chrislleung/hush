@@ -15,6 +15,7 @@ import "./App.css";
 
 interface Message { role: "user" | "assistant" | "system"; content: string; }
 interface ChatTab { id: string; title: string; messages: Message[]; }
+interface DeletedTab extends ChatTab { deletedAt: number; }
 
 export default function App() {
   // --- CHAT & TAB STATE ---
@@ -83,6 +84,9 @@ export default function App() {
   const selectedModelRef = useRef(selectedModel);
   const answerStyleRef = useRef(answerStyle);
 
+  //Collapsible state for Recycle Bin
+  const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
+
   const MODEL_LIMITS: Record<string, string> = {
     "allam-2-7b": "500K",
     "groq/compound": "No limit",
@@ -129,12 +133,19 @@ export default function App() {
   useEffect(() => { answerStyleRef.current = answerStyle; }, [answerStyle]);
   
   // --- INITIALIZATION & SYNC ---
-useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeMessages, isLoading]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [activeMessages, isLoading]);
   useEffect(() => {
     localStorage.setItem("bgOpacity", bgOpacity.toString());
     localStorage.setItem("selectedModel", selectedModel);
     localStorage.setItem("answerStyle", answerStyle);
   }, [bgOpacity, selectedModel, answerStyle]);
+  
+  //Data Recovery State
+  const [retentionDays, setRetentionDays] = useState(() => parseInt(localStorage.getItem("retentionDays") || "2"));
+  const [deletedTabs, setDeletedTabs] = useState<DeletedTab[]>(() => {
+    const saved = localStorage.getItem("deletedTabs");
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Sync Hotkeys to Rust on Startup
   useEffect(() => {
@@ -156,6 +167,24 @@ useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     }
   }, [dailyTokens, lastTokenDate]);
 
+
+  // Sync Data Recovery settings to local storage
+  useEffect(() => { 
+    localStorage.setItem("retentionDays", retentionDays.toString()); 
+  }, [retentionDays]);
+  
+  useEffect(() => { 
+    localStorage.setItem("deletedTabs", JSON.stringify(deletedTabs)); 
+  }, [deletedTabs]);
+
+  // Auto-Purge Expired Tabs
+  // This runs on app startup and whenever they change the slider
+  useEffect(() => {
+    const now = Date.now();
+    const msInDay = 24 * 60 * 60 * 1000;
+    setDeletedTabs(prev => prev.filter(t => now - t.deletedAt < retentionDays * msInDay));
+  }, [retentionDays]);
+
   // --- TAB CONTROLS ---
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -166,9 +195,15 @@ useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   };
 
   const deleteTab = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent the click from selecting the tab
-    if (tabs.length === 1) return; // Don't delete the last tab
+    e.stopPropagation();
+    if (tabs.length === 1) return; 
     
+    // NEW: Save to Recycle Bin before deleting
+    const tabToDelete = tabs.find(t => t.id === id);
+    if (tabToDelete) {
+      setDeletedTabs(prev => [{ ...tabToDelete, deletedAt: Date.now() }, ...prev]);
+    }
+
     setTabs(prev => {
       const newTabs = prev.filter(t => t.id !== id);
       if (activeTabId === id) setActiveTabId(newTabs[newTabs.length - 1].id);
@@ -176,11 +211,34 @@ useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
     });
   };
 
+  // NEW: Restore a tab from the Recycle Bin
+  const restoreTab = (id: string) => {
+    const tabToRestore = deletedTabs.find(t => t.id === id);
+    if (tabToRestore) {
+      setDeletedTabs(prev => prev.filter(t => t.id !== id)); // Remove from trash
+      const { deletedAt, ...restoredTab } = tabToRestore; // Strip the timestamp
+      setTabs(prev => [...prev, restoredTab]); // Add back to active tabs
+      setActiveTabId(restoredTab.id); // Instantly jump to it
+    }
+  };
   // Renaming Functions
   const startRenaming = (tab: ChatTab, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingTabId(tab.id);
     setEditingTitle(tab.title);
+  };
+
+  // Permanently delete a tab from memory
+  const permanentlyDeleteTab = (id: string) => {
+    setDeletedTabs(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Generate a quick summary from the first user message
+  const getTabSummary = (tab: DeletedTab) => {
+    const firstUserMsg = tab.messages.find(m => m.role === "user");
+    if (!firstUserMsg) return "Empty session...";
+    const text = firstUserMsg.content;
+    return text.length > 45 ? text.substring(0, 45) + "..." : text;
   };
 
   const saveTabName = (id: string) => {
@@ -443,8 +501,105 @@ useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
             />
           </div>
 
-
           <div className="setting-row"><label>Opacity</label><input type="range" className="modern-slider" min="0.1" max="1" step="0.1" value={bgOpacity} onChange={e => setBgOpacity(parseFloat(e.target.value))} /></div>
+          
+          {/* Data Recovery Section */}
+          <div className="setting-row" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <label>Keep closed tabs for (days):</label>
+            <input 
+              type="text" 
+              className="hotkey-input" 
+              style={{ width: '45px', padding: '6px', flexGrow: 0, textAlign: 'center' }} 
+              value={retentionDays} 
+              onChange={e => {
+                // 1. Strip letters, but allow the box to be temporarily empty so you can backspace!
+                const val = e.target.value.replace(/[^0-9]/g, '');
+                setRetentionDays(val === '' ? ('' as any) : parseInt(val, 10));
+              }}
+              onKeyDown={e => {
+                // 2. Allow your physical keyboard's Up/Down arrows to control the number
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setRetentionDays(prev => (parseInt(prev as any) || 0) + 1);
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setRetentionDays(prev => Math.max(1, (parseInt(prev as any) || 0) - 1));
+                }
+              }}
+              onBlur={() => {
+                // 3. Safety net: If you delete everything and click away, it defaults to 1
+                if (!retentionDays || (retentionDays as any) === '') {
+                  setRetentionDays(1);
+                }
+              }}
+            />
+          </div>
+
+          {/* Collapsible Recycle Bin with Summaries & Permanent Delete */}
+          {deletedTabs.length > 0 && (
+            <div className="setting-row" style={{ alignItems: 'stretch', marginTop: '10px' }}>
+              
+              {/* Clickable Header */}
+              <div 
+                onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  cursor: 'pointer', 
+                  padding: '8px 4px', 
+                  borderBottom: isHistoryExpanded ? 'none' : '1px solid rgba(255,255,255,0.05)',
+                  opacity: 0.8,
+                  transition: 'opacity 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+              >
+                <span style={{ 
+                  fontSize: '0.75em', 
+                  color: '#aaa', 
+                  transform: isHistoryExpanded ? 'rotate(90deg)' : 'none', 
+                  transition: 'transform 0.2s', 
+                  display: 'inline-block' 
+                }}>▶</span>
+                <label style={{ cursor: 'pointer', margin: 0, fontWeight: 600, color: '#ddd' }}>
+                  Recently Closed ({deletedTabs.length})
+                </label>
+              </div>
+              
+              {/* Collapsible Content Area */}
+              {isHistoryExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px', marginTop: '8px' }}>
+                  {deletedTabs.map(t => (
+                    <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', gap: '12px' }}>
+                      
+                      {/* Left Side: Stacked Title & Summary */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
+                        <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.95em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.title}
+                        </span>
+                        <span style={{ color: '#888', fontSize: '0.85em', fontStyle: 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          "{getTabSummary(t)}"
+                        </span>
+                      </div>
+                      
+                      {/* Right Side: Centered Action Buttons */}
+                      <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        <button onClick={() => restoreTab(t.id)} className="text-action-btn restore">
+                          Restore
+                        </button>
+                        <button onClick={() => permanentlyDeleteTab(t.id)} className="text-action-btn delete">
+                          Delete
+                        </button>
+                      </div>
+                      
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {/* Token Display */}
           <div className="setting-row">
             <label>Today's Tokens Used For This Model</label>

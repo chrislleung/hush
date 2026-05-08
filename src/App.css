@@ -620,3 +620,49 @@ body, html {
 .tab-rename-input::selection {
   background: rgba(255, 255, 255, 0.3);
 }
+
+/* Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* --- Text Action Buttons (Recycle Bin) --- */
+.text-action-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.85em;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  opacity: 0.8;
+}
+
+.text-action-btn:hover {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.text-action-btn.restore {
+  color: #4CAF50;
+}
+
+.text-action-btn.restore:hover {
+  background: rgba(76, 175, 80, 0.15); /* Subtle green glow */
+}
+
+.text-action-btn.delete {
+  color: #ff4444;
+}
+
+.text-action-btn.delete:hover {
+  background: rgba(255, 68, 68, 0.15); /* Subtle red glow */
+}
