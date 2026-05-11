@@ -1,16 +1,16 @@
 # HUSH
 
-Hush is a true-stealth, desktop-based AI assistant built specifically to give you an edge in high-stakes technical interviews and meetings. 
+Hush is a true-stealth, desktop-based AI assistant built specifically to give you an edge in high-stakes meetings. 
 
-Operating as a transparent, glassmorphic overlay on your screen, it natively captures system audio and microphone input, transcribes it in real-time, and feeds it directly into state-of-the-art LLMs via the Groq API. Hush is engineered for absolute privacy, minimizing API costs, and delivering highly structured, interview-ready answers without leaving a trace on your screen shares.
+Operating as a transparent, glassmorphic overlay on your screen, it natively captures system audio and microphone input, transcribes it in real-time, and feeds it directly into state-of-the-art LLMs via the Groq API. Hush is engineered for absolute privacy, minimizing API costs, and delivering highly structured answers without leaving a trace on your screen shares.
 
 ## Core Features
 
 ### Ghost Mode (True Stealth)
-* **Invisible to Screen Share:** Powered by raw Windows OS APIs (`WDA_EXCLUDEFROMCAPTURE`), the Hush overlay is completely invisible to screen-capturing applications like Zoom, Microsoft Teams, and Discord. You can share your "Entire Screen" with confidence—your interviewer will never see the app.
-* **Native Audio Engine:** Hush bypasses standard browser privacy protocols (which trigger "Sharing your screen/audio" popups) by utilizing a custom Rust audio engine (`cpal`). It intercepts system loopback audio directly in RAM, resulting in a zero-footprint, popup-free recording experience.
+* **Invisible to Screen Share:** Powered by raw Windows OS APIs (`WDA_EXCLUDEFROMCAPTURE`), the Hush overlay is completely invisible to screen-capturing applications like Zoom, Microsoft Teams, and Discord. You can share your Entire Screen with confidence.
+* **Native Audio Engine:** Hush bypasses standard browser privacy protocols (which trigger "Sharing your screen/audio" popups) by utilizing a custom Rust audio engine (`cpal`). It intercepts system loopback audio directly in RAM, resulting in a zero-footprint, pop-up-free recording experience.
 
-### Interview-Optimized AI Modes
+### Optimized AI Modes
 Custom-engineered system prompts designed to bypass AI fluff and deliver exactly what you need in a high-pressure environment:
 * **Bullet (Quick):** Rapid-fire, conceptual answers formatted as Markdown lists. Covers logic, algorithmic steps, and Big-O complexity. Zero code output.
 * **Detailed:** In-depth, step-by-step reasoning for deep-dive technical explanations.
@@ -18,7 +18,7 @@ Custom-engineered system prompts designed to bypass AI fluff and deliver exactly
 
 ### Advanced Session Management (Multi-Tab)
 Because stateless AI APIs charge you for your entire chat history on every request, Hush features a fully persistent tab system to save you tokens:
-* **Create/Rename/Delete:** Spin up isolated sessions, double-click to rename them, and clear the slate when moving to a new interview question.
+* **Create/Rename/Delete:** Spin up isolated sessions, double-click to rename them, and clear the slate when moving to a new question.
 * **Local Storage:** All history is saved securely to your local machine.
 * **Data Recovery (Recycle Bin):** Accidentally close a tab? It is safely moved to a collapsible "Recently Closed" accordion menu. Includes a customizable self-destruct timer (retention days), quick-restore, and session summaries.
 
