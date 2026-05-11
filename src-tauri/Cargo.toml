@@ -1,7 +1,7 @@
 [package]
-name = "my-copilot"
+name = "hush"
 version = "0.1.0"
-description = "A Tauri App"
+description = "An AI Meeting Assistant"
 authors = ["you"]
 edition = "2021"
 
@@ -25,3 +25,10 @@ tauri-plugin-global-shortcut = "2.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 cpal = "0.17.3"
+hound = "3.5.1" # <-- ADD THIS FOR WAV ENCODING
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging"
+] }

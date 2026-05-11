@@ -43,3 +43,6 @@ Thumbs.db
 # AI Models
 *.bin
 src-tauri/models/
+
+development md
+

@@ -1,8 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{AppHandle, Manager, Emitter, State};
+// UPDATED: Added 'Window' to the imports
+use tauri::{AppHandle, Manager, Emitter, State, Window};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use std::sync::{Arc, Mutex};
+
+// --- NEW: Windows API Imports for Cloaking ---
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE};
 
 // Store our three shortcuts in memory
 struct Shortcuts {
@@ -11,6 +18,27 @@ struct Shortcuts {
     desktop: String,
 }
 struct AppShortcuts(Arc<Mutex<Shortcuts>>);
+
+// --- NEW: The Cloak Command ---
+#[tauri::command]
+fn cloak_window(window: Window) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                let parsed_hwnd: HWND = std::mem::transmute_copy(&hwnd);
+                match SetWindowDisplayAffinity(parsed_hwnd, WDA_EXCLUDEFROMCAPTURE) {
+                    Ok(_) => return Ok("Ghost mode activated successfully!".to_string()),
+                    Err(e) => return Err(format!("Windows OS rejected the cloak: {}", e)),
+                }
+            }
+        }
+        Err("Failed to get Window Handle (HWND)".to_string())
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    Ok("Not on Windows, skipping cloak.".to_string())
+}
 
 #[tauri::command]
 fn update_shortcuts(app: AppHandle, window: String, mic: String, desktop: String, state: State<'_, AppShortcuts>) -> Result<(), String> {
@@ -83,7 +111,8 @@ fn main() {
             })
             .build()
         )
-        .invoke_handler(tauri::generate_handler![update_shortcuts])
+        // UPDATED: Added cloak_window to the handler!
+        .invoke_handler(tauri::generate_handler![update_shortcuts, cloak_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

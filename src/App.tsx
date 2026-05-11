@@ -149,6 +149,12 @@ export default function App() {
 
   // Sync Hotkeys to Rust on Startup
   useEffect(() => {
+    setTimeout(() => {
+      invoke<string>("cloak_window")
+        .then(msg => console.log(msg))
+        .catch(e => console.error("CRITICAL CLOAK ERROR:", e));
+    }, 500);
+    
     invoke("update_shortcuts", { window: windowShortcut, mic: micShortcut, desktop: desktopShortcut })
       .catch(e => console.error("Initial hotkey sync failed:", e));
   }, []);
