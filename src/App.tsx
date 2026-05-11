@@ -3,6 +3,7 @@ import Groq from "groq-sdk";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event"; 
+import { openUrl } from "@tauri-apps/plugin-opener";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./App.css";
@@ -448,7 +449,15 @@ export default function App() {
         <div className="settings-panel">
           {/* BYOK Input Field */}
           <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
-            <label>Groq API Key <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{color: '#4CAF50', fontSize: '0.8em', textDecoration: 'none'}}>(Get yours here)</a></label>
+            <label>
+              Groq API Key{" "}
+              <span 
+                onClick={() => openUrl("https://console.groq.com/keys")} 
+                style={{color: '#4CAF50', fontSize: '0.8em', textDecoration: 'none', cursor: 'pointer'}}
+              >
+                (Get yours here)
+              </span>
+            </label>
             <input 
               type="password" 
               value={apiKey} 
