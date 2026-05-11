@@ -2,16 +2,10 @@ import { useState, useEffect, KeyboardEvent, useRef } from "react";
 import Groq from "groq-sdk";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event"; // NEW: Needed to listen to Rust
+import { listen } from "@tauri-apps/api/event"; 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./App.css";
-
-//from hardcoded API key 
-// const groq = new Groq({
-//   apiKey: import.meta.env.VITE_GROQ_API_KEY,
-//   dangerouslyAllowBrowser: true,
-// });
 
 interface Message { role: "user" | "assistant" | "system"; content: string; }
 interface ChatTab { id: string; title: string; messages: Message[]; }
@@ -40,7 +34,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isListeningMic, setIsListeningMic] = useState(false);
-  const [isDesktopConnected, setIsDesktopConnected] = useState(false);
+  // REMOVED: isDesktopConnected state
   const [isRecordingDesktop, setIsRecordingDesktop] = useState(false);
   
   // Persistent Settings
@@ -73,8 +67,7 @@ export default function App() {
   const [recordingTarget, setRecordingTarget] = useState<"window" | "mic" | "desktop" | null>(null);
 
   const recognitionRef = useRef<any>(null);
-  const desktopStreamRef = useRef<MediaStream | null>(null);
-  const desktopRecorderRef = useRef<MediaRecorder | null>(null);
+  // REMOVED: desktopStreamRef and desktopRecorderRef
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   //Memory Banks for background functions to access live data
@@ -101,8 +94,6 @@ export default function App() {
     "openai/gpt-oss-safeguard-20b": "200K",
     "qwen/qwen3-32b": "500K",
   };
-
-  
 
   // Sync API Key to localStorage and update the ref
   useEffect(() => { 
@@ -173,7 +164,6 @@ export default function App() {
     }
   }, [dailyTokens, lastTokenDate]);
 
-
   // Sync Data Recovery settings to local storage
   useEffect(() => { 
     localStorage.setItem("retentionDays", retentionDays.toString()); 
@@ -184,7 +174,6 @@ export default function App() {
   }, [deletedTabs]);
 
   // Auto-Purge Expired Tabs
-  // This runs on app startup and whenever they change the slider
   useEffect(() => {
     const now = Date.now();
     const msInDay = 24 * 60 * 60 * 1000;
@@ -204,7 +193,6 @@ export default function App() {
     e.stopPropagation();
     if (tabs.length === 1) return; 
     
-    // NEW: Save to Recycle Bin before deleting
     const tabToDelete = tabs.find(t => t.id === id);
     if (tabToDelete) {
       setDeletedTabs(prev => [{ ...tabToDelete, deletedAt: Date.now() }, ...prev]);
@@ -217,29 +205,26 @@ export default function App() {
     });
   };
 
-  // NEW: Restore a tab from the Recycle Bin
   const restoreTab = (id: string) => {
     const tabToRestore = deletedTabs.find(t => t.id === id);
     if (tabToRestore) {
-      setDeletedTabs(prev => prev.filter(t => t.id !== id)); // Remove from trash
-      const { deletedAt, ...restoredTab } = tabToRestore; // Strip the timestamp
-      setTabs(prev => [...prev, restoredTab]); // Add back to active tabs
-      setActiveTabId(restoredTab.id); // Instantly jump to it
+      setDeletedTabs(prev => prev.filter(t => t.id !== id)); 
+      const { deletedAt, ...restoredTab } = tabToRestore; 
+      setTabs(prev => [...prev, restoredTab]); 
+      setActiveTabId(restoredTab.id); 
     }
   };
-  // Renaming Functions
+
   const startRenaming = (tab: ChatTab, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingTabId(tab.id);
     setEditingTitle(tab.title);
   };
 
-  // Permanently delete a tab from memory
   const permanentlyDeleteTab = (id: string) => {
     setDeletedTabs(prev => prev.filter(t => t.id !== id));
   };
 
-  // Generate a quick summary from the first user message
   const getTabSummary = (tab: DeletedTab) => {
     const firstUserMsg = tab.messages.find(m => m.role === "user");
     if (!firstUserMsg) return "Empty session...";
@@ -280,13 +265,12 @@ export default function App() {
       if (finalTranscript) {
         const newText = (inputRef.current + " " + finalTranscript).trim();
         setInput(newText);
-        inputRef.current = newText; // Update memory bank instantly
+        inputRef.current = newText; 
       }
     };
     recognition.onerror = (e: any) => console.error(e);
     recognition.onend = () => {
       setIsListeningMic(false);
-      // NEW: Auto-send the exact moment the mic finishes shutting down
       if (autoSendRef.current && inputRef.current.trim()) {
         handleSend(inputRef.current);
       }
@@ -297,51 +281,13 @@ export default function App() {
     setIsListeningMic(true);
   };
 
-  const toggleDesktopConnection = async () => {
-    if (isDesktopConnected) {
-      desktopStreamRef.current?.getTracks().forEach(t => t.stop());
-      desktopStreamRef.current = null;
-      setIsDesktopConnected(false);
-      if (isRecordingDesktop) {
-        desktopRecorderRef.current?.stop();
-        setIsRecordingDesktop(false);
-      }
-    } else {
+  // --- NEW: NATIVE STEALTH DESKTOP CAPTURE ---
+  const toggleDesktopRecording = async () => {
+    if (isRecordingDesktop) {
+      // STOP RECORDING
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        const audioTrack = stream.getAudioTracks()[0];
-        if (!audioTrack) throw new Error("No audio track found.");
-        
-        desktopStreamRef.current = new MediaStream([audioTrack]);
-        setIsDesktopConnected(true);
-        stream.getVideoTracks()[0].onended = () => {
-          setIsDesktopConnected(false);
-          desktopStreamRef.current = null;
-          setIsRecordingDesktop(false);
-        };
-      } catch (err: any) {
-        if (err.name === "NotAllowedError") return; 
-        alert("Failed to connect. Ensure you check 'Share system audio'.");
-      }
-    }
-  };
-
-  const toggleDesktopRecording = () => {
-    if (!isDesktopConnected || !desktopStreamRef.current) {
-      alert("Please click the 🖥️/🔌 button to connect your screen first before using the hotkey!");
-      return;
-    }
-
-    if (isRecordingDesktop && desktopRecorderRef.current) {
-      desktopRecorderRef.current.stop();
-      setIsRecordingDesktop(false);
-    } else {
-      const recorder = new MediaRecorder(desktopStreamRef.current);
-      const audioChunks: Blob[] = [];
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const file = new File([audioBlob], "question.webm", { type: 'audio/webm' });
+        const audioBytes = await invoke<number[]>("stop_native_recording");
+        setIsRecordingDesktop(false);
         
         if (!apiKeyRef.current) {
           setInput("Error: Please add your Groq API key in Settings.");
@@ -349,32 +295,40 @@ export default function App() {
           return;
         }
 
-        if (!autoSendRef.current) setInput("Transcribing question...");
-        
-        try {
-          // NEW: Initialize Groq dynamically here too
-          const userGroq = new Groq({ apiKey: apiKeyRef.current, dangerouslyAllowBrowser: true });
-          const transcription = await userGroq.audio.transcriptions.create({ file: file, model: "whisper-large-v3" });
-          
-          if (autoSendRef.current) {
-            setInput(""); 
-            handleSend(transcription.text); 
-          } else {
-            setInput((prev) => prev.replace("Transcribing question...", transcription.text));
-          }
-        } catch (error) { 
-          if (!autoSendRef.current) setInput((prev) => prev.replace("Transcribing question...", "Error transcribing audio. Check your API key.")); 
-        }
-      };
+        if (!autoSendRef.current) setInput("Transcribing system audio...");
 
-      desktopRecorderRef.current = recorder;
-      recorder.start();
-      setIsRecordingDesktop(true);
+        // Convert the raw RAM bytes into a standard Javascript File
+        const uint8Array = new Uint8Array(audioBytes);
+        const audioBlob = new Blob([uint8Array], { type: 'audio/wav' });
+        const file = new File([audioBlob], "stealth_capture.wav", { type: 'audio/wav' });
+        
+        // Send to Groq
+        const userGroq = new Groq({ apiKey: apiKeyRef.current, dangerouslyAllowBrowser: true });
+        const transcription = await userGroq.audio.transcriptions.create({ file: file, model: "whisper-large-v3" });
+        
+        if (autoSendRef.current) {
+          setInput(""); 
+          handleSend(transcription.text); 
+        } else {
+          setInput((prev) => prev.replace("Transcribing system audio...", transcription.text));
+        }
+      } catch (error) { 
+        console.error("Audio processing failed:", error);
+        setIsRecordingDesktop(false);
+        if (!autoSendRef.current) setInput((prev) => prev.replace("Transcribing system audio...", "Error transcribing audio.")); 
+      }
+    } else {
+      // START RECORDING
+      try {
+        await invoke("start_native_recording");
+        setIsRecordingDesktop(true);
+      } catch (e) {
+        alert("Failed to start stealth recording: " + e);
+      }
     }
   };
 
   // --- RUST EVENT LISTENERS ---
-  // We use a ref to ensure the event listeners always trigger the most recent versions of the functions
   const actionsRef = useRef({ toggleMic, toggleDesktopRecording });
   useEffect(() => { actionsRef.current = { toggleMic, toggleDesktopRecording }; }, [toggleMic, toggleDesktopRecording]);
 
@@ -391,7 +345,6 @@ export default function App() {
   const handleSend = async (textToSend: string) => {
     if (!textToSend.trim() || isLoading) return;
     
-    // Check if they provided a key first!
     if (!apiKeyRef.current) {
       alert("Please enter your Groq API Key in the settings (⚙️) first!");
       setShowSettings(true);
@@ -418,7 +371,6 @@ export default function App() {
     }
 
     try {
-      // NEW: Initialize Groq dynamically using their saved key
       const userGroq = new Groq({ apiKey: apiKeyRef.current, dangerouslyAllowBrowser: true });
       
       const response = await userGroq.chat.completions.create({ 
@@ -443,6 +395,7 @@ export default function App() {
     } 
     finally { setIsLoading(false); }
   };
+
   // --- HOTKEY CAPTURE LOGIC ---
   const handleHotkeyCapture = (e: KeyboardEvent<HTMLInputElement>, target: "window" | "mic" | "desktop") => {
     e.preventDefault();
@@ -493,7 +446,6 @@ export default function App() {
 
       {showSettings && (
         <div className="settings-panel">
-
           {/* BYOK Input Field */}
           <div className="setting-row" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
             <label>Groq API Key <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{color: '#4CAF50', fontSize: '0.8em', textDecoration: 'none'}}>(Get yours here)</a></label>
@@ -518,12 +470,10 @@ export default function App() {
               style={{ width: '45px', padding: '6px', flexGrow: 0, textAlign: 'center' }} 
               value={retentionDays} 
               onChange={e => {
-                // 1. Strip letters, but allow the box to be temporarily empty so you can backspace!
                 const val = e.target.value.replace(/[^0-9]/g, '');
                 setRetentionDays(val === '' ? ('' as any) : parseInt(val, 10));
               }}
               onKeyDown={e => {
-                // 2. Allow your physical keyboard's Up/Down arrows to control the number
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
                   setRetentionDays(prev => (parseInt(prev as any) || 0) + 1);
@@ -534,7 +484,6 @@ export default function App() {
                 }
               }}
               onBlur={() => {
-                // 3. Safety net: If you delete everything and click away, it defaults to 1
                 if (!retentionDays || (retentionDays as any) === '') {
                   setRetentionDays(1);
                 }
@@ -545,8 +494,6 @@ export default function App() {
           {/* Collapsible Recycle Bin with Summaries & Permanent Delete */}
           {deletedTabs.length > 0 && (
             <div className="setting-row" style={{ alignItems: 'stretch', marginTop: '10px' }}>
-              
-              {/* Clickable Header */}
               <div 
                 onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}
                 style={{ 
@@ -574,13 +521,10 @@ export default function App() {
                 </label>
               </div>
               
-              {/* Collapsible Content Area */}
               {isHistoryExpanded && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px', marginTop: '8px' }}>
                   {deletedTabs.map(t => (
                     <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', gap: '12px' }}>
-                      
-                      {/* Left Side: Stacked Title & Summary */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
                         <span style={{ color: '#fff', fontWeight: '600', fontSize: '0.95em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {t.title}
@@ -589,17 +533,10 @@ export default function App() {
                           "{getTabSummary(t)}"
                         </span>
                       </div>
-                      
-                      {/* Right Side: Centered Action Buttons */}
                       <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-                        <button onClick={() => restoreTab(t.id)} className="text-action-btn restore">
-                          Restore
-                        </button>
-                        <button onClick={() => permanentlyDeleteTab(t.id)} className="text-action-btn delete">
-                          Delete
-                        </button>
+                        <button onClick={() => restoreTab(t.id)} className="text-action-btn restore">Restore</button>
+                        <button onClick={() => permanentlyDeleteTab(t.id)} className="text-action-btn delete">Delete</button>
                       </div>
-                      
                     </div>
                   ))}
                 </div>
@@ -698,7 +635,6 @@ export default function App() {
       </div>
 
       <div className="content">
-        {/* Changed messages.map to activeMessages.map */}
         {activeMessages.map((m, i) => (
           <div key={i} className={m.role === "assistant" ? "ai-suggestion markdown-body" : "user-message"}>
             {m.role === "assistant" ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown> : m.content}
@@ -708,12 +644,20 @@ export default function App() {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* UPDATED: Simplified input area with the new Native Desktop Button */}
       <div className="input-area">
         <select className="style-selector" value={answerStyle} onChange={(e) => setAnswerStyle(e.target.value)}>
           <option value="default">Default</option><option value="quick">Bullet</option><option value="detailed">Detailed</option><option value="code">Code Only</option>
         </select>
-        <button className={`mic-btn ${isDesktopConnected ? 'listening' : ''}`} onClick={toggleDesktopConnection}>{isDesktopConnected ? '🔌' : '🖥️'}</button>
-        {isDesktopConnected && ( <button className={`mic-btn ${isRecordingDesktop ? 'listening recording-pulse' : ''}`} onClick={toggleDesktopRecording} style={{ backgroundColor: isRecordingDesktop ? '#ff4444' : '#444' }}>{isRecordingDesktop ? '⏹️' : '⏺️'}</button> )}
+        
+        <button 
+          className={`mic-btn ${isRecordingDesktop ? 'listening recording-pulse' : ''}`} 
+          onClick={toggleDesktopRecording} 
+          style={{ backgroundColor: isRecordingDesktop ? '#ff4444' : 'rgba(255, 255, 255, 0.05)' }}
+        >
+          {isRecordingDesktop ? '⏹️' : '🖥️'}
+        </button> 
+
         <button className={`mic-btn ${isListeningMic ? 'listening' : ''}`} onClick={toggleMic}>{isListeningMic ? '🎙️' : '🎤'}</button>
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSend(input)} placeholder="Ask Copilot..." />
       </div>
