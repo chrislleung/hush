@@ -52,7 +52,7 @@ You will need [Node.js](https://nodejs.org/) and [Rust](https://www.rust-lang.or
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/yourusername/hush.git](https://github.com/yourusername/hush.git)
+   git clone [https://github.com/chrislleung/hush.git](https://github.com/chrislleung/hush.git)
    cd hush
    ```
 2. Install frontend dependencies:
@@ -74,7 +74,7 @@ You will need [Node.js](https://nodejs.org/) and [Rust](https://www.rust-lang.or
 ## Usage Tips
 The Screen Share Trick: To fully utilize Hush's ghost technology, you must select "Share Entire Screen" in Zoom or Discord. If you choose to share a specific application window (like VS Code), the OS-level cloaking cannot protect the overlay bounds. Sharing your whole screen guarantees the app remains invisible to the capture buffer.
 
-Optimizing Tokens: If an interviewer moves on to a completely new topic (e.g., from a Hash Map question to System Design), open a New Tab (+)! This prevents the app from resending the massive Hash Map chat history to the API, saving you thousands of tokens.
+Optimizing Tokens: If the meeting moves on to a completely new topic (e.g., from a Hash Map question to System Design), open a New Tab (+)! This prevents the app from resending the massive Hash Map chat history to the API, saving you thousands of tokens.
 
 Number Inputs: The "Retention Days" setting uses a custom text-field approach to bypass ugly browser spinner arrows, allowing you to seamlessly type a number or use your physical Up/Down arrow keys.
 
