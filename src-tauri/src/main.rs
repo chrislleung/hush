@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{AppHandle, Manager, Emitter, State, Window};
+use tauri::{AppHandle, Manager, Emitter, State, WebviewUrl, WebviewWindowBuilder, Window};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -15,6 +15,7 @@ struct Shortcuts {
     window: String,
     mic: String,
     desktop: String,
+    notes: String,
 }
 struct AppShortcuts(Arc<Mutex<Shortcuts>>);
 
@@ -43,9 +44,44 @@ fn cloak_window(window: Window) -> Result<String, String> {
     Ok("Not on Windows, skipping cloak.".to_string())
 }
 
+#[tauri::command]
+fn open_notes_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("notes") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let notes_window = WebviewWindowBuilder::new(&app, "notes", WebviewUrl::App("index.html".into()))
+        .title("Hush Notes")
+        .inner_size(480.0, 440.0)
+        .min_inner_size(360.0, 300.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .resizable(true)
+        .skip_taskbar(true)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(hwnd) = notes_window.hwnd() {
+            unsafe {
+                let parsed_hwnd: HWND = std::mem::transmute_copy(&hwnd);
+                let _ = SetWindowDisplayAffinity(parsed_hwnd, WDA_EXCLUDEFROMCAPTURE);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // --- HOTKEYS ---
 #[tauri::command]
-fn update_shortcuts(app: AppHandle, window: String, mic: String, desktop: String, state: State<'_, AppShortcuts>) -> Result<(), String> {
+fn update_shortcuts(app: AppHandle, window: String, mic: String, desktop: String, notes: String, state: State<'_, AppShortcuts>) -> Result<(), String> {
     let manager = app.global_shortcut();
     let _ = manager.unregister_all(); 
     {
@@ -53,10 +89,12 @@ fn update_shortcuts(app: AppHandle, window: String, mic: String, desktop: String
         s.window = window.clone();
         s.mic = mic.clone();
         s.desktop = desktop.clone();
+        s.notes = notes.clone();
     }
     if let Ok(w) = window.parse::<Shortcut>() { let _ = manager.register(w); }
     if let Ok(m) = mic.parse::<Shortcut>() { let _ = manager.register(m); }
     if let Ok(d) = desktop.parse::<Shortcut>() { let _ = manager.register(d); }
+    if let Ok(n) = notes.parse::<Shortcut>() { let _ = manager.register(n); }
     Ok(())
 }
 
@@ -156,6 +194,7 @@ fn main() {
         window: "Ctrl+Shift+Space".to_string(),
         mic: "Ctrl+Shift+M".to_string(),
         desktop: "Ctrl+Shift+D".to_string(),
+        notes: "Ctrl+Shift+N".to_string(),
     };
     
     let app_shortcuts = AppShortcuts(Arc::new(Mutex::new(initial_shortcuts)));
@@ -169,14 +208,15 @@ fn main() {
             .with_handler(|app, shortcut, event| {
                 if event.state == ShortcutState::Pressed {
                     let state = app.state::<AppShortcuts>();
-                    let (window_sc, mic_sc, desktop_sc) = {
+                    let (window_sc, mic_sc, desktop_sc, notes_sc) = {
                         let s = state.0.lock().unwrap();
-                        (s.window.clone(), s.mic.clone(), s.desktop.clone())
+                        (s.window.clone(), s.mic.clone(), s.desktop.clone(), s.notes.clone())
                     };
 
                     let is_window = window_sc.parse::<Shortcut>().map(|s| s.id() == shortcut.id()).unwrap_or(false);
                     let is_mic = mic_sc.parse::<Shortcut>().map(|s| s.id() == shortcut.id()).unwrap_or(false);
                     let is_desktop = desktop_sc.parse::<Shortcut>().map(|s| s.id() == shortcut.id()).unwrap_or(false);
+                    let is_notes = notes_sc.parse::<Shortcut>().map(|s| s.id() == shortcut.id()).unwrap_or(false);
 
                     if is_window {
                         if let Some(window) = app.get_webview_window("main") {
@@ -185,10 +225,15 @@ fn main() {
                             if is_visible && !is_minimized { let _ = window.hide(); } 
                             else { let _ = window.show(); let _ = window.unminimize(); let _ = window.set_focus(); }
                         }
-                    } else if is_mic {
+                    }
+                    if is_mic {
                         let _ = app.emit("toggle_mic", ());
-                    } else if is_desktop {
+                    }
+                    if is_desktop {
                         let _ = app.emit("toggle_desktop", ());
+                    }
+                    if is_notes {
+                        let _ = app.emit("toggle_notes", ());
                     }
                 }
             })
@@ -196,6 +241,7 @@ fn main() {
         )
         .invoke_handler(tauri::generate_handler![
             update_shortcuts, 
+            open_notes_window,
             cloak_window, 
             start_native_recording, 
             stop_native_recording

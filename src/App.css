@@ -85,19 +85,25 @@ body, html {
   color: #707075;
   border: none;
   border-radius: 6px;
-  width: 28px;
+  min-width: 28px;
   height: 28px;
+  padding: 0 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   transition: all 0.2s ease;
 }
 
 .control-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.control-btn.active-control {
+  background: rgba(76, 175, 80, 0.18);
+  color: #caffd1;
 }
 
 /* --- 3. Refined Chat Area --- */
@@ -665,4 +671,321 @@ input[type="number"] {
 
 .text-action-btn.delete:hover {
   background: rgba(255, 68, 68, 0.15); /* Subtle red glow */
+}
+
+/* --- Meeting Notes --- */
+.notes-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: min(42vh, 330px);
+  min-height: 220px;
+  padding: 12px 16px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+}
+
+.notes-window-container {
+  min-width: 0;
+}
+
+.detached-notes-panel {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  border-bottom: none;
+}
+
+.notes-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notes-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: #f2f2f2;
+  font-size: 0.86em;
+  font-weight: 700;
+}
+
+.notes-count {
+  color: #85858c;
+  font-size: 0.82em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.notes-mode-toggle {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.notes-mode-toggle button {
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  padding: 0 9px;
+  background: transparent;
+  color: #8f9098;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82em;
+  font-weight: 700;
+  transition: all 0.18s ease;
+}
+
+.notes-mode-toggle button:hover {
+  color: #ffffff;
+}
+
+.notes-mode-toggle button.active {
+  color: #101014;
+  background: #ffffff;
+}
+
+.notes-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+  transform: none;
+}
+
+.notes-library {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notes-list {
+  min-width: 0;
+  max-height: 86px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 6px;
+  padding: 1px 4px 1px 1px;
+  flex-shrink: 0;
+}
+
+.note-list-item {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #bfc0c7;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 0.86em;
+  transition: all 0.2s ease;
+}
+
+.note-list-item span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-list-item:hover,
+.note-list-item.active {
+  color: #ffffff;
+  background: rgba(76, 175, 80, 0.14);
+  border-color: rgba(76, 175, 80, 0.32);
+}
+
+.note-editor {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-title-input {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  outline: none;
+  font: inherit;
+  font-size: 0.9em;
+  font-weight: 700;
+}
+
+.note-title-input:focus {
+  border-color: rgba(76, 175, 80, 0.45);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.08);
+}
+
+.notes-textarea {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  outline: none;
+  font: inherit;
+  font-size: 0.95em;
+  line-height: 1.5;
+}
+
+.notes-textarea:focus {
+  border-color: rgba(76, 175, 80, 0.45);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.08);
+}
+
+.notes-textarea::placeholder {
+  color: #6d6d73;
+}
+
+.note-viewer {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.note-viewer h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.05em;
+  line-height: 1.25;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-viewer-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f3f3f4;
+  font-size: 1em;
+  line-height: 1.58;
+}
+
+.note-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 18px;
+  color: #85858c;
+  text-align: center;
+  font-size: 0.9em;
+  line-height: 1.4;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+
+.notes-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.notes-confirm-dialog {
+  width: min(320px, 100%);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(24, 24, 28, 0.94);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.45);
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+.notes-confirm-dialog h2 {
+  margin: 0 0 8px;
+  color: #ffffff;
+  font-size: 1em;
+  line-height: 1.25;
+}
+
+.notes-confirm-dialog p {
+  margin: 0;
+  color: #b9bac2;
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+
+.notes-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.confirm-delete-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: #e5484d;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86em;
+  font-weight: 700;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.confirm-delete-btn:hover {
+  background: #ff555b;
+  transform: scale(1.03);
+}
+
+@media (max-width: 520px) {
+  .notes-list {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
 }

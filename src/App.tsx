@@ -1,6 +1,7 @@
 import { useState, useEffect, KeyboardEvent, useRef } from "react";
 import Groq from "groq-sdk";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event"; 
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -11,8 +12,237 @@ import "./App.css";
 interface Message { role: "user" | "assistant" | "system"; content: string; }
 interface ChatTab { id: string; title: string; messages: Message[]; }
 interface DeletedTab extends ChatTab { deletedAt: number; }
+interface SavedNote { id: string; title: string; content: string; }
+
+const DEFAULT_NOTES: SavedNote[] = [
+  {
+    id: "note-tell-me-about-yourself",
+    title: "Tell me about yourself",
+    content: "Start with current role/background.\n\nMention 2-3 strongest experiences:\n- Project or role that matches this opportunity\n- Technical strengths or tools\n- Collaboration, ownership, or leadership moment\n\nClose with why this role/company is the right next step.",
+  },
+];
+
+const NOTES_WINDOW_POSITION_KEY = "notesWindowPosition";
+
+function useSavedNotes() {
+  const [savedNotes, setSavedNotes] = useState<SavedNote[]>(() => {
+    const saved = localStorage.getItem("savedMeetingNotes");
+    if (!saved) return DEFAULT_NOTES;
+    try {
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_NOTES;
+    } catch {
+      return DEFAULT_NOTES;
+    }
+  });
+  const [activeNoteId, setActiveNoteId] = useState(() => localStorage.getItem("activeNoteId") || DEFAULT_NOTES[0].id);
+
+  useEffect(() => {
+    localStorage.setItem("savedMeetingNotes", JSON.stringify(savedNotes));
+    if (savedNotes.length > 0 && !savedNotes.some(note => note.id === activeNoteId)) {
+      setActiveNoteId(savedNotes[0].id);
+    }
+  }, [savedNotes, activeNoteId]);
+
+  useEffect(() => {
+    localStorage.setItem("activeNoteId", activeNoteId);
+  }, [activeNoteId]);
+
+  const activeNote = savedNotes.find(note => note.id === activeNoteId) || savedNotes[0];
+
+  const createSavedNote = () => {
+    const newNote: SavedNote = {
+      id: `note-${Date.now()}`,
+      title: "New note",
+      content: "",
+    };
+    setSavedNotes(prev => [...prev, newNote]);
+    setActiveNoteId(newNote.id);
+  };
+
+  const updateSavedNote = (id: string, updates: Partial<SavedNote>) => {
+    setSavedNotes(prev => prev.map(note => note.id === id ? { ...note, ...updates } : note));
+  };
+
+  const deleteSavedNote = (id: string) => {
+    setSavedNotes(prev => prev.filter(note => note.id !== id));
+  };
+
+  return {
+    activeNote,
+    activeNoteId,
+    createSavedNote,
+    deleteSavedNote,
+    savedNotes,
+    setActiveNoteId,
+    updateSavedNote,
+  };
+}
+
+function NotesWindow() {
+  const {
+    activeNote,
+    activeNoteId,
+    createSavedNote,
+    deleteSavedNote,
+    savedNotes,
+    setActiveNoteId,
+    updateSavedNote,
+  } = useSavedNotes();
+
+  const [bgOpacity] = useState(() => parseFloat(localStorage.getItem("bgOpacity") || "0.85"));
+  const [notesMode, setNotesMode] = useState<"view" | "edit">(() => {
+    const saved = localStorage.getItem("notesMode");
+    return saved === "edit" ? "edit" : "view";
+  });
+  const [notePendingDelete, setNotePendingDelete] = useState<SavedNote | null>(null);
+
+  useEffect(() => {
+    setTimeout(() => {
+      invoke<string>("cloak_window")
+        .then(msg => console.log(msg))
+        .catch(e => console.error("CRITICAL NOTES CLOAK ERROR:", e));
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("notesMode", notesMode);
+  }, [notesMode]);
+
+  useEffect(() => {
+    const notesWindow = getCurrentWindow();
+    const unlistenMoved = notesWindow.onMoved(({ payload }) => {
+      localStorage.setItem(NOTES_WINDOW_POSITION_KEY, JSON.stringify({
+        x: payload.x,
+        y: payload.y,
+      }));
+    });
+
+    return () => {
+      unlistenMoved.then(unlisten => unlisten());
+    };
+  }, []);
+
+  const requestDeleteNote = () => {
+    if (!activeNote) return;
+    setNotePendingDelete(activeNote);
+  };
+
+  const confirmDeleteNote = () => {
+    if (!notePendingDelete) return;
+    deleteSavedNote(notePendingDelete.id);
+    setNotePendingDelete(null);
+  };
+
+  return (
+    <div className="overlay-container notes-window-container" style={{ backgroundColor: `rgba(12, 12, 16, ${bgOpacity})` }}>
+      <div className="drag-handle" data-tauri-drag-region>
+        <div className="header-title" data-tauri-drag-region>Hush Notes</div>
+        <div className="header-controls">
+          <button className="control-btn" onClick={() => getCurrentWindow().close()}>x</button>
+        </div>
+      </div>
+
+      <div className="notes-panel detached-notes-panel">
+        <div className="notes-toolbar">
+          <div className="notes-title">
+            <span>Quick Notes</span>
+            <span className="notes-count">{savedNotes.length.toLocaleString()} saved</span>
+          </div>
+          <div className="notes-actions">
+            <div className="notes-mode-toggle" aria-label="Notes mode">
+              <button
+                className={notesMode === "view" ? "active" : ""}
+                onClick={() => setNotesMode("view")}
+              >
+                View
+              </button>
+              <button
+                className={notesMode === "edit" ? "active" : ""}
+                onClick={() => setNotesMode("edit")}
+              >
+                Edit
+              </button>
+            </div>
+            <button className="text-action-btn restore" onClick={createSavedNote}>
+              New
+            </button>
+            <button className="text-action-btn delete" onClick={requestDeleteNote} disabled={!activeNote}>
+              Delete
+            </button>
+          </div>
+        </div>
+        <div className="notes-library">
+          {activeNote ? (
+            notesMode === "edit" ? (
+              <div className="note-editor">
+                <input
+                  className="note-title-input"
+                  value={activeNote.title}
+                  onChange={e => updateSavedNote(activeNote.id, { title: e.target.value })}
+                  placeholder="Note title"
+                />
+                <textarea
+                  className="notes-textarea"
+                  value={activeNote.content}
+                  onChange={e => updateSavedNote(activeNote.id, { content: e.target.value })}
+                  placeholder="Write the talking points you want ready at one click..."
+                />
+              </div>
+            ) : (
+              <div className="note-viewer">
+                <h2>{activeNote.title || "Untitled note"}</h2>
+                <div className="note-viewer-content">
+                  {activeNote.content.trim() || "Switch to Edit to add talking points."}
+                </div>
+              </div>
+            )
+          ) : (
+            <div className="note-empty-state">
+              Create a note to keep interview answers, talking points, or reminders ready.
+            </div>
+          )}
+          <div className="notes-list" aria-label="Saved notes">
+            {savedNotes.map(note => (
+              <button
+                key={note.id}
+                className={`note-list-item ${activeNoteId === note.id ? "active" : ""}`}
+                onClick={() => setActiveNoteId(note.id)}
+              >
+                <span>{note.title || "Untitled note"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {notePendingDelete && (
+        <div className="notes-confirm-backdrop" role="presentation">
+          <div className="notes-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-note-title">
+            <h2 id="delete-note-title">Delete note?</h2>
+            <p>
+              This will permanently delete "{notePendingDelete.title || "Untitled note"}".
+            </p>
+            <div className="notes-confirm-actions">
+              <button className="text-action-btn restore" onClick={() => setNotePendingDelete(null)}>
+                Cancel
+              </button>
+              <button className="confirm-delete-btn" onClick={confirmDeleteNote}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function App() {
+  return getCurrentWindow().label === "notes" ? <NotesWindow /> : <MainWindow />;
+}
+
+function MainWindow() {
   // --- CHAT & TAB STATE ---
   const [tabs, setTabs] = useState<ChatTab[]>(() => {
     const saved = localStorage.getItem("chatTabs");
@@ -60,12 +290,13 @@ export default function App() {
   const [windowShortcut, setWindowShortcut] = useState(() => localStorage.getItem("windowShortcut") || "Ctrl+Shift+Space");
   const [micShortcut, setMicShortcut] = useState(() => localStorage.getItem("micShortcut") || "Ctrl+Shift+M");
   const [desktopShortcut, setDesktopShortcut] = useState(() => localStorage.getItem("desktopShortcut") || "Ctrl+Shift+D");
+  const [notesShortcut, setNotesShortcut] = useState(() => localStorage.getItem("notesShortcut") || "Ctrl+Shift+N");
 
   const [showSettings, setShowSettings] = useState(false);
   
   // Track which hotkey input is actively being recorded
-  const [drafts, setDrafts] = useState({ window: windowShortcut, mic: micShortcut, desktop: desktopShortcut });
-  const [recordingTarget, setRecordingTarget] = useState<"window" | "mic" | "desktop" | null>(null);
+  const [drafts, setDrafts] = useState({ window: windowShortcut, mic: micShortcut, desktop: desktopShortcut, notes: notesShortcut });
+  const [recordingTarget, setRecordingTarget] = useState<"window" | "mic" | "desktop" | "notes" | null>(null);
 
   const recognitionRef = useRef<any>(null);
   // REMOVED: desktopStreamRef and desktopRecorderRef
@@ -147,7 +378,7 @@ export default function App() {
         .catch(e => console.error("CRITICAL CLOAK ERROR:", e));
     }, 500);
     
-    invoke("update_shortcuts", { window: windowShortcut, mic: micShortcut, desktop: desktopShortcut })
+    invoke("update_shortcuts", { window: windowShortcut, mic: micShortcut, desktop: desktopShortcut, notes: notesShortcut })
       .catch(e => console.error("Initial hotkey sync failed:", e));
   }, []);
 
@@ -330,15 +561,23 @@ export default function App() {
   };
 
   // --- RUST EVENT LISTENERS ---
-  const actionsRef = useRef({ toggleMic, toggleDesktopRecording });
-  useEffect(() => { actionsRef.current = { toggleMic, toggleDesktopRecording }; }, [toggleMic, toggleDesktopRecording]);
+  const actionsRef = useRef({ toggleMic, toggleDesktopRecording, toggleNotesWindow: async () => {} });
+  useEffect(() => {
+    actionsRef.current = {
+      toggleMic,
+      toggleDesktopRecording,
+      toggleNotesWindow: async () => {},
+    };
+  }, [toggleMic, toggleDesktopRecording]);
 
   useEffect(() => {
     const unlistenMic = listen("toggle_mic", () => actionsRef.current.toggleMic());
     const unlistenDesk = listen("toggle_desktop", () => actionsRef.current.toggleDesktopRecording());
+    const unlistenNotes = listen("toggle_notes", () => actionsRef.current.toggleNotesWindow());
     return () => {
       unlistenMic.then(f => f());
       unlistenDesk.then(f => f());
+      unlistenNotes.then(f => f());
     };
   }, []);
 
@@ -398,7 +637,7 @@ export default function App() {
   };
 
   // --- HOTKEY CAPTURE LOGIC ---
-  const handleHotkeyCapture = (e: KeyboardEvent<HTMLInputElement>, target: "window" | "mic" | "desktop") => {
+  const handleHotkeyCapture = (e: KeyboardEvent<HTMLInputElement>, target: "window" | "mic" | "desktop" | "notes") => {
     e.preventDefault();
     let keys = [];
     if (e.metaKey) keys.push("Super"); 
@@ -424,22 +663,101 @@ export default function App() {
   };
 
   const handleSaveShortcuts = async () => {
-    if (drafts.window.includes("...") || drafts.mic.includes("...") || drafts.desktop.includes("...")) return alert("Please finish recording your shortcuts.");
+    if (drafts.window.includes("...") || drafts.mic.includes("...") || drafts.desktop.includes("...") || drafts.notes.includes("...")) return alert("Please finish recording your shortcuts.");
     try {
-      await invoke("update_shortcuts", { window: drafts.window, mic: drafts.mic, desktop: drafts.desktop });
-      setWindowShortcut(drafts.window); setMicShortcut(drafts.mic); setDesktopShortcut(drafts.desktop);
+      await invoke("update_shortcuts", { window: drafts.window, mic: drafts.mic, desktop: drafts.desktop, notes: drafts.notes });
+      setWindowShortcut(drafts.window); setMicShortcut(drafts.mic); setDesktopShortcut(drafts.desktop); setNotesShortcut(drafts.notes);
       localStorage.setItem("windowShortcut", drafts.window);
       localStorage.setItem("micShortcut", drafts.mic);
       localStorage.setItem("desktopShortcut", drafts.desktop);
+      localStorage.setItem("notesShortcut", drafts.notes);
       setShowSettings(false);
     } catch (e) { alert("Error saving hotkeys: " + e); }
   };
+
+  const createNotesWindow = async () => {
+    let parsedPosition: { x: number; y: number } | null = null;
+    try {
+      const savedPosition = localStorage.getItem(NOTES_WINDOW_POSITION_KEY);
+      parsedPosition = savedPosition ? JSON.parse(savedPosition) : null;
+    } catch {
+      parsedPosition = null;
+    }
+    const hasSavedPosition = typeof parsedPosition?.x === "number" && typeof parsedPosition?.y === "number";
+    const notesWindowX = hasSavedPosition ? parsedPosition!.x : 0;
+    const notesWindowY = hasSavedPosition ? parsedPosition!.y : 0;
+
+    const notesWindow = new WebviewWindow("notes", {
+      url: "/",
+      title: "Hush Notes",
+      x: notesWindowX,
+      y: notesWindowY,
+      width: 480,
+      height: 440,
+      minWidth: 360,
+      minHeight: 300,
+      decorations: false,
+      transparent: true,
+      alwaysOnTop: true,
+      contentProtected: true,
+      resizable: true,
+      skipTaskbar: true,
+      focus: true,
+    });
+
+    notesWindow.once("tauri://created", async () => {
+      await notesWindow.setFocus();
+    });
+
+    notesWindow.once("tauri://error", (event) => {
+      console.error("Failed to create notes window:", event);
+    });
+  };
+
+  const openNotesWindow = async () => {
+    try {
+      const existingNotesWindow = await WebviewWindow.getByLabel("notes");
+      if (existingNotesWindow) {
+        await existingNotesWindow.destroy();
+      }
+
+      await createNotesWindow();
+    } catch (e) {
+      alert("Failed to open notes window: " + e);
+    }
+  };
+
+  const toggleNotesWindow = async () => {
+    try {
+      const existingNotesWindow = await WebviewWindow.getByLabel("notes");
+      if (existingNotesWindow) {
+        await existingNotesWindow.destroy();
+        return;
+      }
+
+      await createNotesWindow();
+    } catch (e) {
+      console.error("Failed to toggle notes window:", e);
+    }
+  };
+
+  useEffect(() => {
+    actionsRef.current = { toggleMic, toggleDesktopRecording, toggleNotesWindow };
+  }, [toggleMic, toggleDesktopRecording, toggleNotesWindow]);
 
   return (
     <div className="overlay-container" style={{ backgroundColor: `rgba(12, 12, 16, ${bgOpacity})` }}>
       <div className="drag-handle" data-tauri-drag-region>
         <div className="header-title" data-tauri-drag-region>Hush</div>
         <div className="header-controls">
+          <button
+            className="control-btn"
+            onClick={openNotesWindow}
+            title="Open quick notes"
+            aria-label="Open quick notes"
+          >
+            Notes
+          </button>
           <button className="control-btn" onClick={() => setShowSettings(!showSettings)}>⚙️</button>
           <button className="control-btn" onClick={() => getCurrentWindow().hide()}>_</button>
         </div>
@@ -595,6 +913,11 @@ export default function App() {
             <div className="hotkey-col">
               <label>Record Desktop</label>
               <input type="text" className={`hotkey-input ${recordingTarget === 'desktop' ? 'recording' : ''}`} value={drafts.desktop} readOnly onFocus={() => setRecordingTarget('desktop')} onBlur={() => setRecordingTarget(null)} onKeyDown={e => handleHotkeyCapture(e, 'desktop')} />
+            </div>
+
+            <div className="hotkey-col">
+              <label>Toggle Notes</label>
+              <input type="text" className={`hotkey-input ${recordingTarget === 'notes' ? 'recording' : ''}`} value={drafts.notes} readOnly onFocus={() => setRecordingTarget('notes')} onBlur={() => setRecordingTarget(null)} onKeyDown={e => handleHotkeyCapture(e, 'notes')} />
             </div>
           </div>
 
