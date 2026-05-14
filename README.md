@@ -22,9 +22,9 @@ Hush includes a separate stealth notes window for prewritten talking points and 
 
 ### Optimized AI Modes
 Custom-engineered system prompts designed to bypass AI fluff and deliver exactly what you need in a high-pressure environment:
-* **Bullet (Quick):** Rapid-fire, conceptual answers formatted as Markdown lists. Covers logic, algorithmic steps, and Big-O complexity. Zero code output.
+* **Bullet (Quick):** Rapid-fire, conceptual answers formatted as Markdown lists. Covers logic, algorithmic steps, and performance tradeoffs
 * **Detailed:** In-depth, step-by-step reasoning for deep-dive technical explanations.
-* **Code Only:** Outputs an optimal, production-ready code block *first*, followed immediately by a brief bulleted explanation so you can talk through the logic out loud.
+* **Code Only:** Outputs an optimal, production-ready code block *first*, followed immediately by a brief bulleted explanation so you can easily present the logic to your team.
 
 ### Advanced Session Management (Multi-Tab)
 Because stateless AI APIs charge you for your entire chat history on every request, Hush features a fully persistent tab system to save you tokens:
@@ -63,7 +63,7 @@ You will need [Node.js](https://nodejs.org/) and [Rust](https://www.rust-lang.or
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/yourusername/hush.git](https://github.com/yourusername/hush.git)
+   git clone [https://github.com/chrislleung/hush.git](https://github.com/chrislleung/hush.git)
    cd hush
    ```
 2. Install frontend dependencies:
@@ -89,7 +89,7 @@ You will need [Node.js](https://nodejs.org/) and [Rust](https://www.rust-lang.or
 ## Usage Tips
 The Screen Share Trick: To fully utilize Hush's ghost technology, you must select "Share Entire Screen" in Zoom or Discord. If you choose to share a specific application window (like VS Code), the OS-level cloaking cannot protect the overlay bounds. Sharing your whole screen guarantees the app remains invisible to the capture buffer.
 
-Optimizing Tokens: If an interviewer moves on to a completely new topic (e.g., from a Hash Map question to System Design), open a New Tab (+)! This prevents the app from resending the massive Hash Map chat history to the API, saving you thousands of tokens.
+Optimizing Tokens: If the meeting moves on to a completely new topic (e.g., from Frontend Architecture to Database Scaling), open a New Tab (+)! This prevents the app from resending the massive Frontend chat history to the API, saving you thousands of tokens.
 
 Number Inputs: The "Retention Days" setting uses a custom text-field approach to bypass ugly browser spinner arrows, allowing you to seamlessly type a number or use your physical Up/Down arrow keys.
 
